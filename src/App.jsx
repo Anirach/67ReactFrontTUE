@@ -1,92 +1,135 @@
-function ProductCategoryRow({ category }) {
-    return (
-      <tr>
-        <th colSpan="2">
-          {category}
-        </th>
-      </tr>
-    );
-  }
-  
-  function ProductRow({ product }) {
-    const name = product.stocked ? product.name :
-      <span style={{ color: 'red' }}>
-        {product.name}
-      </span>;
-  
-    return (
-      <tr>
-        <td>{name}</td>
-        <td>{product.price}</td>
-      </tr>
-    );
-  }
-  
-  function ProductTable({ products }) {
-    const rows = [];
-    let lastCategory = null;
-  
-    products.forEach((product) => {
-      if (product.category !== lastCategory) {
-        rows.push(
-          <ProductCategoryRow
-            category={product.category}
-            key={product.category} />
-        );
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+import BookList from './components/BookList';
+import ViewBook from './components/ViewBook';
+import BookForm from './components/BookForm';
+
+const API_URL = 'http://localhost:5000/books';
+
+const App = () => {
+  const [books, setBooks] = useState([]);
+  const [selectedBook, setSelectedBook] = useState(null);
+  const [viewMode, setViewMode] = useState('list'); // 'list', 'view', 'edit'
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Function to handle API errors
+  const handleError = (err) => {
+    if (err.response) {
+      // Server responded with a status code outside 2xx range
+      setError(`Error: ${err.response.status} - ${err.response.data.message}`);
+    } else if (err.request) {
+      // Request was made but no response received
+      setError('Network error: No response received from server.');
+    } else {
+      // Something else caused the error
+      setError(`Error: ${err.message}`);
+    }
+  };
+
+  // Fetch books when component mounts
+  useEffect(() => {
+    // Fetch books from API
+    const fetchBooks = async () => {
+      try {
+        setLoading(true);
+        const response = await axios.get(API_URL);
+        setBooks(response.data);
+        setError(null);  // Clear any previous errors
+        setLoading(false);
+      } catch (err) {
+        handleError(err);
+        setLoading(false);
       }
-      rows.push(
-        <ProductRow
-          product={product}
-          key={product.name} />
-      );
-      lastCategory = product.category;
-    });
+    };
   
-    return (
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Price</th>
-          </tr>
-        </thead>
-        <tbody>{rows}</tbody>
-      </table>
-    );
+    fetchBooks();
+  }, []);
+
+  const handleView = (id) => {
+    setSelectedBook(books.find((book) => book.id === id));
+    setViewMode('view');
+  };
+
+  const handleEdit = (id) => {
+    setSelectedBook(books.find((book) => book.id === id) || null);
+    setViewMode('edit');
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await axios.delete(`${API_URL}/${id}`);
+      setBooks(books.filter((book) => book.id !== id));
+      setViewMode('list');
+      setError(null);  // Clear any previous errors
+    } catch (err) {
+      handleError(err);
+    }
+  };
+
+  const handleSave = async (book) => {
+    try {
+      if (book.id) {
+        // Update existing book
+        await axios.put(`${API_URL}/${book.id}`, book);
+        setBooks(books.map((b) => (b.id === book.id ? book : b)));
+      } else {
+        // Create new book
+        const response = await axios.post(API_URL, book);
+        setBooks([...books, response.data]);
+      }
+      setViewMode('list');
+      setError(null);  // Clear any previous errors
+    } catch (err) {
+      handleError(err);
+    }
+  };
+
+  const handleBack = () => {
+    setViewMode('list');
+  };
+
+  // Function to handle creating a new book
+  const handleCreateNewBook = () => {
+    setSelectedBook(null); // Reset selectedBook to null for new book creation
+    setViewMode('edit');    // Switch to 'edit' mode to show the form
+  };
+
+  // Rendering loading and error states
+  if (loading) {
+    return <div>Loading...</div>;
   }
-  
-  function SearchBar() {
-    return (
-      <form>
-        <input type="text" placeholder="Search..." />
-        <label>
-          <input type="checkbox" />
-          {' '}
-          Only show products in stock
-        </label>
-      </form>
-    );
+
+  if (error) {
+    return <div style={{ color: 'red' }}>{error}</div>;
   }
-  
-  function FilterableProductTable({ products }) {
-    return (
-      <div>
-        <SearchBar />
-        <ProductTable products={products} />
-      </div>
-    );
-  }
-  
-  const PRODUCTS = [
-    {category: "Fruits", price: "$1", stocked: true, name: "Apple"},
-    {category: "Fruits", price: "$1", stocked: true, name: "Dragonfruit"},
-    {category: "Fruits", price: "$2", stocked: false, name: "Passionfruit"},
-    {category: "Vegetables", price: "$2", stocked: true, name: "Spinach"},
-    {category: "Vegetables", price: "$4", stocked: false, name: "Pumpkin"},
-    {category: "Vegetables", price: "$1", stocked: true, name: "Peas"}
-  ];
-  
-  export default function App() {
-    return <FilterableProductTable products={PRODUCTS} />;
-  }
-  
+
+  return (
+    <div>
+      {viewMode === 'list' && (
+        <div>
+          <BookList
+            books={books}
+            onView={handleView}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onCreate={handleCreateNewBook}  // Pass onCreate prop to BookList
+          />
+        </div>
+      )}
+      {viewMode === 'view' && (
+        <ViewBook
+          book={selectedBook}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onBack={handleBack}
+        />
+      )}
+      {viewMode === 'edit' && (
+        <BookForm book={selectedBook} onSave={handleSave} onBack={handleBack} />
+      )}
+    </div>
+  );
+};
+
+export default App;
